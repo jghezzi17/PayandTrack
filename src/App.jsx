@@ -7,6 +7,7 @@ function App() {
   const [expenses, setExpenses] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
+  const [timeRange, setTimeRange] = useState('today') // 'today', 'week', 'month'
   
   // Form state
   const [amount, setAmount] = useState('')
@@ -77,8 +78,33 @@ function App() {
     }
   }
 
-  // Calculate total monthly expense (mocked to all for now)
-  const totalExpense = expenses.reduce((acc, curr) => acc + Number(curr.amount), 0)
+  const getFilteredExpenses = () => {
+    const now = new Date()
+    // Normalizziamo l'ora alla fine della giornata odierna
+    now.setHours(23, 59, 59, 999)
+    
+    return expenses.filter(exp => {
+      const expDate = new Date(exp.date)
+      
+      if (timeRange === 'today') {
+        // Confrontiamo solo la data (YYYY-MM-DD)
+        const todayStr = new Date().toISOString().split('T')[0]
+        return exp.date === todayStr
+      } else if (timeRange === 'week') {
+        const weekAgo = new Date(now)
+        weekAgo.setDate(now.getDate() - 7)
+        return expDate >= weekAgo && expDate <= now
+      } else if (timeRange === 'month') {
+        const monthAgo = new Date(now)
+        monthAgo.setDate(now.getDate() - 30)
+        return expDate >= monthAgo && expDate <= now
+      }
+      return true
+    })
+  }
+
+  const filteredExpenses = getFilteredExpenses()
+  const totalExpense = filteredExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0)
 
   return (
     <div className="app-container">
@@ -100,23 +126,53 @@ function App() {
           <>
             {activeTab === 'dashboard' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                
+                {/* Time Range Selector */}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    className={`btn ${timeRange === 'today' ? '' : 'btn-outline'}`} 
+                    onClick={() => setTimeRange('today')} 
+                    style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}
+                  >
+                    Oggi
+                  </button>
+                  <button 
+                    className={`btn ${timeRange === 'week' ? '' : 'btn-outline'}`} 
+                    onClick={() => setTimeRange('week')} 
+                    style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}
+                  >
+                    7 Giorni
+                  </button>
+                  <button 
+                    className={`btn ${timeRange === 'month' ? '' : 'btn-outline'}`} 
+                    onClick={() => setTimeRange('month')} 
+                    style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}
+                  >
+                    30 Giorni
+                  </button>
+                </div>
+
                 <div className="card" style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-hover))', border: 'none' }}>
-                  <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.9rem', marginBottom: '4px' }}>Spesa Totale</p>
+                  <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.9rem', marginBottom: '4px' }}>
+                    {timeRange === 'today' ? 'Spesa di Oggi' : timeRange === 'week' ? 'Spesa Ultimi 7 Giorni' : 'Spesa Ultimi 30 Giorni'}
+                  </p>
                   <h2 style={{ fontSize: '2.5rem', color: 'white', margin: 0 }}>€ {totalExpense.toFixed(2)}</h2>
                 </div>
                 
                 <div className="card">
-                  <h3 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>Ultime Spese</h3>
-                  {expenses.length === 0 ? (
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '20px 0' }}>Nessuna spesa registrata.</p>
+                  <h3 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>
+                    {timeRange === 'today' ? 'Spese di Oggi' : 'Ultime Spese'}
+                  </h3>
+                  {filteredExpenses.length === 0 ? (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '20px 0' }}>Nessuna spesa in questo periodo.</p>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {expenses.slice(0, 5).map(expense => (
+                      {filteredExpenses.map(expense => (
                         <div key={expense.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
                           <div>
                             <p style={{ fontWeight: '500', fontSize: '0.95rem' }}>{expense.title}</p>
                             <span style={{ fontSize: '0.75rem', color: expense.category?.color || 'var(--text-muted)' }}>
-                              {expense.category?.name || 'Senza Categoria'}
+                              {expense.category?.name || 'Senza Categoria'} • {new Date(expense.date).toLocaleDateString('it-IT')}
                             </span>
                           </div>
                           <div style={{ fontWeight: '600', color: 'var(--danger)' }}>
