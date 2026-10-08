@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Home, PlusCircle, PieChart, Settings, Loader2 } from 'lucide-react'
+import { Home, PlusCircle, PieChart, Settings, Loader2, Edit2, X } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import {
   Chart as ChartJS,
@@ -14,33 +14,70 @@ import {
 } from 'chart.js'
 import { Line, Doughnut } from 'react-chartjs-2'
 
-// Register Chart.js components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend
-)
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend)
 
-function App() {
+export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [expenses, setExpenses] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState('today') 
   
+  // Add Expense State
   const [amount, setAmount] = useState('')
   const [title, setTitle] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Edit Expense State
+  const [editingExpense, setEditingExpense] = useState(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editAmount, setEditAmount] = useState('')
+  const [editCategoryId, setEditCategoryId] = useState('')
+
   useEffect(() => {
     fetchData()
   }, [])
+
+  const autoCategorize = async (uncategorizedExpenses, fetchedCats) => {
+    if (uncategorizedExpenses.length === 0) return false;
+
+    let updatesMade = false;
+    const catMap = {}
+    fetchedCats.forEach(c => catMap[c.name.toLowerCase()] = c.id)
+
+    // Dictionary of keywords to categories
+    const rules = {
+      'cibo': ['mcdonald', 'bar', 'ristorante', 'pizzeria', 'caffè', 'starbucks', 'kfc', 'sushi', 'deliveroo', 'justeat', 'glovo', 'burger'],
+      'spesa': ['esselunga', 'coop', 'conad', 'carrefour', 'pam', 'lidl', 'eurospin', 'supermercato', 'spesa'],
+      'trasporti': ['trenitalia', 'uber', 'taxi', 'eni', 'q8', 'ip', 'treno', 'italo', 'atm', 'biglietto', 'benzina', 'diesel', 'transport', 'flight', 'ryanair', 'easyjet'],
+      'amazon': ['amazon', 'prime'],
+    }
+
+    const updates = uncategorizedExpenses.map(exp => {
+      let matchedCategoryName = 'altro'
+      const lowerTitle = exp.title.toLowerCase()
+
+      for (const [catName, keywords] of Object.entries(rules)) {
+        if (keywords.some(kw => lowerTitle.includes(kw))) {
+          matchedCategoryName = catName
+          break
+        }
+      }
+
+      const assignedCatId = catMap[matchedCategoryName] || catMap['altro']
+      if (assignedCatId) {
+        updatesMade = true;
+        return supabase.from('expenses').update({ category_id: assignedCatId }).eq('id', exp.id)
+      }
+      return null
+    }).filter(Boolean)
+
+    if (updates.length > 0) {
+      await Promise.all(updates)
+    }
+    return updatesMade;
+  }
 
   const fetchData = async () => {
     try {
@@ -54,7 +91,22 @@ function App() {
         .select(`*, category:categories(*)`)
         .order('date', { ascending: false })
       if (expError) throw expError
-      setExpenses(exp || [])
+
+      // Run Auto-categorization for expenses with no category
+      const uncategorized = (exp || []).filter(e => !e.category_id)
+      const wasUpdated = await autoCategorize(uncategorized, cats || [])
+      
+      if (wasUpdated) {
+        // Refetch to get the updated categories
+        const { data: updatedExp } = await supabase
+          .from('expenses')
+          .select(`*, category:categories(*)`)
+          .order('date', { ascending: false })
+        setExpenses(updatedExp || [])
+      } else {
+        setExpenses(exp || [])
+      }
+
     } catch (error) {
       console.error('Error fetching data:', error.message)
       alert('Errore nel caricamento dei dati')
@@ -65,10 +117,7 @@ function App() {
 
   const handleAddExpense = async (e) => {
     e.preventDefault()
-    if (!amount || !title || !categoryId) {
-      alert('Compila tutti i campi')
-      return
-    }
+    if (!amount || !title || !categoryId) return alert('Compila tutti i campi')
 
     try {
       setIsSubmitting(true)
@@ -80,18 +129,56 @@ function App() {
           date: new Date().toISOString().split('T')[0]
         }
       ])
-
       if (error) throw error
-
       setAmount('')
       setTitle('')
       setCategoryId('')
-      
       await fetchData()
       setActiveTab('dashboard')
     } catch (error) {
-      console.error('Error saving expense:', error.message)
       alert('Errore nel salvataggio della spesa')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const openEditModal = (expense) => {
+    setEditingExpense(expense)
+    setEditTitle(expense.title)
+    setEditAmount(expense.amount)
+    setEditCategoryId(expense.category_id || '')
+  }
+
+  const handleUpdateExpense = async (e) => {
+    e.preventDefault()
+    try {
+      setIsSubmitting(true)
+      const { error } = await supabase.from('expenses').update({
+        title: editTitle,
+        amount: parseFloat(editAmount),
+        category_id: editCategoryId
+      }).eq('id', editingExpense.id)
+      
+      if (error) throw error
+      setEditingExpense(null)
+      await fetchData()
+    } catch (error) {
+      alert('Errore nella modifica della spesa')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleDeleteExpense = async () => {
+    if (!window.confirm("Vuoi davvero eliminare questa spesa?")) return;
+    try {
+      setIsSubmitting(true)
+      const { error } = await supabase.from('expenses').delete().eq('id', editingExpense.id)
+      if (error) throw error
+      setEditingExpense(null)
+      await fetchData()
+    } catch (error) {
+      alert('Errore nell\'eliminazione della spesa')
     } finally {
       setIsSubmitting(false)
     }
@@ -102,14 +189,13 @@ function App() {
     now.setHours(23, 59, 59, 999)
     return expenses.filter(exp => {
       const expDate = new Date(exp.date)
-      if (timeRange === 'today') {
-        const todayStr = new Date().toISOString().split('T')[0]
-        return exp.date === todayStr
-      } else if (timeRange === 'week') {
+      if (timeRange === 'today') return exp.date === new Date().toISOString().split('T')[0]
+      if (timeRange === 'week') {
         const weekAgo = new Date(now)
         weekAgo.setDate(now.getDate() - 7)
         return expDate >= weekAgo && expDate <= now
-      } else if (timeRange === 'month') {
+      }
+      if (timeRange === 'month') {
         const monthAgo = new Date(now)
         monthAgo.setDate(now.getDate() - 30)
         return expDate >= monthAgo && expDate <= now
@@ -163,7 +249,6 @@ function App() {
 
   const stats = calculateAverages()
 
-  // Chart Data: Last 7 Days Trend
   const getLineChartData = () => {
     const days = []
     const totals = []
@@ -178,7 +263,6 @@ function App() {
         .reduce((sum, e) => sum + Number(e.amount), 0)
       totals.push(dayTotal)
     }
-
     return {
       labels: days,
       datasets: [
@@ -194,16 +278,13 @@ function App() {
     }
   }
 
-  // Chart Data: Category Breakdown (Last 30 Days)
   const getDoughnutChartData = () => {
     const categoryTotals = {}
     stats.monthExp.forEach(e => {
       const catName = e.category?.name || 'Altro'
       categoryTotals[catName] = (categoryTotals[catName] || 0) + Number(e.amount)
     })
-
     const bgColors = ['#ff4d4d', '#9b59b6', '#f1c40f', '#e67e22', '#3498db', '#2ecc71', '#8b8d98']
-
     return {
       labels: Object.keys(categoryTotals),
       datasets: [
@@ -216,6 +297,18 @@ function App() {
     }
   }
 
+  // Modal Styles
+  const modalOverlayStyle = {
+    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(5px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 1000, padding: '20px'
+  }
+  const modalContentStyle = {
+    background: 'var(--bg-card)', padding: '24px', borderRadius: 'var(--radius-md)',
+    width: '100%', maxWidth: '400px', border: '1px solid var(--border)'
+  }
+
   return (
     <div className="app-container">
       <header style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -225,11 +318,42 @@ function App() {
         </div>
       </header>
 
+      {/* Edit Modal */}
+      {editingExpense && (
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle} className="animate-fade-in">
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '1.2rem' }}>Modifica Spesa</h2>
+              <button onClick={() => setEditingExpense(null)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}><X /></button>
+            </div>
+            <form onSubmit={handleUpdateExpense}>
+              <div className="form-group">
+                <label className="form-label">Titolo</label>
+                <input type="text" className="form-control" value={editTitle} onChange={e => setEditTitle(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Importo (€)</label>
+                <input type="number" step="0.01" className="form-control" value={editAmount} onChange={e => setEditAmount(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Categoria</label>
+                <select className="form-control" value={editCategoryId} onChange={e => setEditCategoryId(e.target.value)} required>
+                  <option value="">Seleziona...</option>
+                  {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
+                <button type="submit" className="btn" style={{ flex: 2 }} disabled={isSubmitting}>Salva</button>
+                <button type="button" className="btn btn-danger" style={{ flex: 1 }} onClick={handleDeleteExpense} disabled={isSubmitting}>Elimina</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <main className="animate-fade-in">
         {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}>
-            <Loader2 className="animate-spin" size={32} color="var(--primary)" />
-          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}><Loader2 className="animate-spin" size={32} color="var(--primary)" /></div>
         ) : (
           <>
             {activeTab === 'dashboard' && (
@@ -263,8 +387,11 @@ function App() {
                               {expense.category?.name || 'Senza Categoria'} • {new Date(expense.date).toLocaleDateString('it-IT')}
                             </span>
                           </div>
-                          <div style={{ fontWeight: '600', color: 'var(--danger)' }}>
-                            -€ {Number(expense.amount).toFixed(2)}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ fontWeight: '600', color: 'var(--danger)' }}>-€ {Number(expense.amount).toFixed(2)}</div>
+                            <button onClick={() => openEditModal(expense)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
+                              <Edit2 size={16} />
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -273,39 +400,21 @@ function App() {
                 </div>
               </div>
             )}
-
+            
             {activeTab === 'add' && (
               <div className="card">
                 <h2 style={{ marginBottom: '20px' }}>Aggiungi Spesa</h2>
                 <form onSubmit={handleAddExpense}>
-                  <div className="form-group">
-                    <label className="form-label">Importo (€)</label>
-                    <input 
-                      type="number" className="form-control" placeholder="0.00" step="0.01" 
-                      required value={amount} onChange={(e) => setAmount(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Titolo</label>
-                    <input 
-                      type="text" className="form-control" placeholder="Es. Caffè" 
-                      required value={title} onChange={(e) => setTitle(e.target.value)}
-                    />
-                  </div>
+                  <div className="form-group"><label className="form-label">Importo (€)</label><input type="number" className="form-control" placeholder="0.00" step="0.01" required value={amount} onChange={e => setAmount(e.target.value)} /></div>
+                  <div className="form-group"><label className="form-label">Titolo</label><input type="text" className="form-control" placeholder="Es. Caffè" required value={title} onChange={e => setTitle(e.target.value)} /></div>
                   <div className="form-group">
                     <label className="form-label">Categoria</label>
-                    <select 
-                      className="form-control" required value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
-                    >
+                    <select className="form-control" required value={categoryId} onChange={e => setCategoryId(e.target.value)}>
                       <option value="">Seleziona...</option>
-                      {categories.map(cat => (
-                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                      ))}
+                      {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
                     </select>
                   </div>
-                  <button type="submit" className="btn" style={{ width: '100%', marginTop: '16px' }} disabled={isSubmitting}>
-                    {isSubmitting ? 'Salvataggio...' : 'Salva Spesa'}
-                  </button>
+                  <button type="submit" className="btn" style={{ width: '100%', marginTop: '16px' }} disabled={isSubmitting}>{isSubmitting ? 'Salvataggio...' : 'Salva Spesa'}</button>
                 </form>
               </div>
             )}
@@ -379,5 +488,3 @@ function App() {
     </div>
   )
 }
-
-export default App
