@@ -1,15 +1,38 @@
 import { useState, useEffect } from 'react'
 import { Home, PlusCircle, PieChart, Settings, Loader2 } from 'lucide-react'
 import { supabase } from './lib/supabase'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js'
+import { Line, Doughnut } from 'react-chartjs-2'
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend
+)
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [expenses, setExpenses] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
-  const [timeRange, setTimeRange] = useState('today') // 'today', 'week', 'month'
+  const [timeRange, setTimeRange] = useState('today') 
   
-  // Form state
   const [amount, setAmount] = useState('')
   const [title, setTitle] = useState('')
   const [categoryId, setCategoryId] = useState('')
@@ -22,12 +45,10 @@ function App() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      // Fetch categories
       const { data: cats, error: catError } = await supabase.from('categories').select('*')
       if (catError) throw catError
       setCategories(cats || [])
 
-      // Fetch expenses with category info
       const { data: exp, error: expError } = await supabase
         .from('expenses')
         .select(`*, category:categories(*)`)
@@ -62,12 +83,10 @@ function App() {
 
       if (error) throw error
 
-      // Reset form
       setAmount('')
       setTitle('')
       setCategoryId('')
       
-      // Refresh data and go to dashboard
       await fetchData()
       setActiveTab('dashboard')
     } catch (error) {
@@ -80,14 +99,10 @@ function App() {
 
   const getFilteredExpenses = () => {
     const now = new Date()
-    // Normalizziamo l'ora alla fine della giornata odierna
     now.setHours(23, 59, 59, 999)
-    
     return expenses.filter(exp => {
       const expDate = new Date(exp.date)
-      
       if (timeRange === 'today') {
-        // Confrontiamo solo la data (YYYY-MM-DD)
         const todayStr = new Date().toISOString().split('T')[0]
         return exp.date === todayStr
       } else if (timeRange === 'week') {
@@ -106,9 +121,103 @@ function App() {
   const filteredExpenses = getFilteredExpenses()
   const totalExpense = filteredExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0)
 
+  // --- ANALISI & STATISTICHE LOGIC ---
+  const calculateAverages = () => {
+    const now = new Date()
+    now.setHours(23, 59, 59, 999)
+    
+    // 7 Days
+    const weekAgo = new Date(now)
+    weekAgo.setDate(now.getDate() - 7)
+    const weekExp = expenses.filter(e => new Date(e.date) >= weekAgo && new Date(e.date) <= now)
+    const weekTotal = weekExp.reduce((sum, e) => sum + Number(e.amount), 0)
+    
+    // 30 Days
+    const monthAgo = new Date(now)
+    monthAgo.setDate(now.getDate() - 30)
+    const monthExp = expenses.filter(e => new Date(e.date) >= monthAgo && new Date(e.date) <= now)
+    const monthTotal = monthExp.reduce((sum, e) => sum + Number(e.amount), 0)
+
+    // Current Month Prediction
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
+    const thisMonthExp = expenses.filter(e => {
+      const d = new Date(e.date)
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+    })
+    const thisMonthTotal = thisMonthExp.reduce((sum, e) => sum + Number(e.amount), 0)
+    
+    const today = now.getDate()
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate()
+    const prediction = today > 0 ? (thisMonthTotal / today) * daysInMonth : 0
+
+    return {
+      avg7: weekTotal / 7,
+      avg30: monthTotal / 30,
+      prediction,
+      monthTotal,
+      weekExp,
+      monthExp
+    }
+  }
+
+  const stats = calculateAverages()
+
+  // Chart Data: Last 7 Days Trend
+  const getLineChartData = () => {
+    const days = []
+    const totals = []
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      const dateStr = d.toISOString().split('T')[0]
+      days.push(d.toLocaleDateString('it-IT', { weekday: 'short' }))
+      
+      const dayTotal = expenses
+        .filter(e => e.date === dateStr)
+        .reduce((sum, e) => sum + Number(e.amount), 0)
+      totals.push(dayTotal)
+    }
+
+    return {
+      labels: days,
+      datasets: [
+        {
+          label: 'Spesa Giornaliera (€)',
+          data: totals,
+          borderColor: '#5e6ad2',
+          backgroundColor: 'rgba(94, 106, 210, 0.2)',
+          tension: 0.4,
+          fill: true
+        }
+      ]
+    }
+  }
+
+  // Chart Data: Category Breakdown (Last 30 Days)
+  const getDoughnutChartData = () => {
+    const categoryTotals = {}
+    stats.monthExp.forEach(e => {
+      const catName = e.category?.name || 'Altro'
+      categoryTotals[catName] = (categoryTotals[catName] || 0) + Number(e.amount)
+    })
+
+    const bgColors = ['#ff4d4d', '#9b59b6', '#f1c40f', '#e67e22', '#3498db', '#2ecc71', '#8b8d98']
+
+    return {
+      labels: Object.keys(categoryTotals),
+      datasets: [
+        {
+          data: Object.values(categoryTotals),
+          backgroundColor: bgColors.slice(0, Object.keys(categoryTotals).length),
+          borderWidth: 0,
+        }
+      ]
+    }
+  }
+
   return (
     <div className="app-container">
-      {/* Header */}
       <header style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: '1.5rem', margin: 0 }}>Pay & Track</h1>
@@ -116,7 +225,6 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content Area */}
       <main className="animate-fade-in">
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}>
@@ -126,30 +234,10 @@ function App() {
           <>
             {activeTab === 'dashboard' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                
-                {/* Time Range Selector */}
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button 
-                    className={`btn ${timeRange === 'today' ? '' : 'btn-outline'}`} 
-                    onClick={() => setTimeRange('today')} 
-                    style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}
-                  >
-                    Oggi
-                  </button>
-                  <button 
-                    className={`btn ${timeRange === 'week' ? '' : 'btn-outline'}`} 
-                    onClick={() => setTimeRange('week')} 
-                    style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}
-                  >
-                    7 Giorni
-                  </button>
-                  <button 
-                    className={`btn ${timeRange === 'month' ? '' : 'btn-outline'}`} 
-                    onClick={() => setTimeRange('month')} 
-                    style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}
-                  >
-                    30 Giorni
-                  </button>
+                  <button className={`btn ${timeRange === 'today' ? '' : 'btn-outline'}`} onClick={() => setTimeRange('today')} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>Oggi</button>
+                  <button className={`btn ${timeRange === 'week' ? '' : 'btn-outline'}`} onClick={() => setTimeRange('week')} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>7 Giorni</button>
+                  <button className={`btn ${timeRange === 'month' ? '' : 'btn-outline'}`} onClick={() => setTimeRange('month')} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>30 Giorni</button>
                 </div>
 
                 <div className="card" style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-hover))', border: 'none' }}>
@@ -193,33 +281,21 @@ function App() {
                   <div className="form-group">
                     <label className="form-label">Importo (€)</label>
                     <input 
-                      type="number" 
-                      className="form-control" 
-                      placeholder="0.00" 
-                      step="0.01" 
-                      required
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
+                      type="number" className="form-control" placeholder="0.00" step="0.01" 
+                      required value={amount} onChange={(e) => setAmount(e.target.value)}
                     />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Titolo</label>
                     <input 
-                      type="text" 
-                      className="form-control" 
-                      placeholder="Es. Caffè" 
-                      required
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
+                      type="text" className="form-control" placeholder="Es. Caffè" 
+                      required value={title} onChange={(e) => setTitle(e.target.value)}
                     />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Categoria</label>
                     <select 
-                      className="form-control" 
-                      required
-                      value={categoryId}
-                      onChange={(e) => setCategoryId(e.target.value)}
+                      className="form-control" required value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
                     >
                       <option value="">Seleziona...</option>
                       {categories.map(cat => (
@@ -235,9 +311,45 @@ function App() {
             )}
 
             {activeTab === 'insights' && (
-              <div className="card">
-                <h2>Statistiche</h2>
-                <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>Presto disponibile...</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div className="card">
+                  <h2 style={{ marginBottom: '16px' }}>Andamento (Ultimi 7 gg)</h2>
+                  <Line 
+                    data={getLineChartData()} 
+                    options={{ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }, x: { grid: { display: false } } } }} 
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="card" style={{ padding: '16px' }}>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Media 7 Giorni</p>
+                    <p style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>€ {stats.avg7.toFixed(2)} <span style={{fontSize:'0.8rem', fontWeight:'normal'}}>/gg</span></p>
+                  </div>
+                  <div className="card" style={{ padding: '16px' }}>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Media 30 Giorni</p>
+                    <p style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>€ {stats.avg30.toFixed(2)} <span style={{fontSize:'0.8rem', fontWeight:'normal'}}>/gg</span></p>
+                  </div>
+                </div>
+
+                <div className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Predizione spesa di questo mese</p>
+                  <h3 style={{ fontSize: '1.8rem', margin: '4px 0' }}>€ {stats.prediction.toFixed(2)}</h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Basata sulla tua spesa media attuale di {stats.monthTotal.toFixed(2)}€ fino ad oggi.</p>
+                </div>
+
+                <div className="card">
+                  <h3 style={{ marginBottom: '16px' }}>Categorie (Ultimi 30 gg)</h3>
+                  {stats.monthExp.length > 0 ? (
+                    <div style={{ width: '80%', margin: '0 auto' }}>
+                      <Doughnut 
+                        data={getDoughnutChartData()} 
+                        options={{ plugins: { legend: { position: 'bottom', labels: { color: 'var(--text-main)' } } }, cutout: '70%', borderDash: [2] }} 
+                      />
+                    </div>
+                  ) : (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center' }}>Dati insufficienti.</p>
+                  )}
+                </div>
               </div>
             )}
 
@@ -245,6 +357,7 @@ function App() {
               <div className="card">
                 <h2>Impostazioni</h2>
                 <div style={{ marginTop: '20px' }}>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '16px' }}>Questa app è connessa al tuo database privato Supabase.</p>
                   <div className="form-group">
                     <label className="form-label">Budget Mensile (€)</label>
                     <input type="number" className="form-control" placeholder="0.00" />
@@ -257,24 +370,11 @@ function App() {
         )}
       </main>
 
-      {/* Bottom Navigation */}
       <nav className="bottom-nav">
-        <button className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-          <Home />
-          <span>Dashboard</span>
-        </button>
-        <button className={`nav-item ${activeTab === 'add' ? 'active' : ''}`} onClick={() => setActiveTab('add')}>
-          <PlusCircle />
-          <span>Aggiungi</span>
-        </button>
-        <button className={`nav-item ${activeTab === 'insights' ? 'active' : ''}`} onClick={() => setActiveTab('insights')}>
-          <PieChart />
-          <span>Analisi</span>
-        </button>
-        <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
-          <Settings />
-          <span>Impostazioni</span>
-        </button>
+        <button className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}><Home /><span>Dashboard</span></button>
+        <button className={`nav-item ${activeTab === 'add' ? 'active' : ''}`} onClick={() => setActiveTab('add')}><PlusCircle /><span>Aggiungi</span></button>
+        <button className={`nav-item ${activeTab === 'insights' ? 'active' : ''}`} onClick={() => setActiveTab('insights')}><PieChart /><span>Analisi</span></button>
+        <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}><Settings /><span>Impostazioni</span></button>
       </nav>
     </div>
   )
