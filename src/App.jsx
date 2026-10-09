@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Home, PlusCircle, PieChart, Settings, Loader2, Edit2, X } from 'lucide-react'
+import { Home, PlusCircle, PieChart, Settings, Loader2, Edit2, X, RefreshCw } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import {
   Chart as ChartJS,
@@ -22,6 +22,7 @@ export default function App() {
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState('today') 
+  const [isRefreshing, setIsRefreshing] = useState(false)
   
   // Add Expense State
   const [amount, setAmount] = useState('')
@@ -39,14 +40,21 @@ export default function App() {
     fetchData()
   }, [])
 
-  const autoCategorize = async (uncategorizedExpenses, fetchedCats) => {
+  const autoCategorize = async (uncategorizedExpenses, fetchedCats, categorizedExpenses) => {
     if (uncategorizedExpenses.length === 0) return false;
 
     let updatesMade = false;
     const catMap = {}
     fetchedCats.forEach(c => catMap[c.name.toLowerCase()] = c.id)
 
-    // Dictionary of keywords to categories
+    // Build a memory map from previously manually/auto categorized expenses
+    // The most recent matching title will overwrite older ones, which is good (latest choice wins)
+    const learnedMap = {}
+    categorizedExpenses.forEach(e => {
+      learnedMap[e.title.toLowerCase().trim()] = e.category_id
+    })
+
+    // Dictionary of fallback keywords to categories
     const rules = {
       'cibo': ['mcdonald', 'bar', 'ristorante', 'pizzeria', 'caffè', 'starbucks', 'kfc', 'sushi', 'deliveroo', 'justeat', 'glovo', 'burger'],
       'spesa': ['esselunga', 'coop', 'conad', 'carrefour', 'pam', 'lidl', 'eurospin', 'supermercato', 'spesa'],
@@ -55,9 +63,16 @@ export default function App() {
     }
 
     const updates = uncategorizedExpenses.map(exp => {
-      let matchedCategoryName = 'altro'
-      const lowerTitle = exp.title.toLowerCase()
+      const lowerTitle = exp.title.toLowerCase().trim()
 
+      // 1. Check if we "learned" this exact title from past expenses
+      if (learnedMap[lowerTitle]) {
+        updatesMade = true;
+        return supabase.from('expenses').update({ category_id: learnedMap[lowerTitle] }).eq('id', exp.id)
+      }
+
+      // 2. If no exact match in memory, use fallback rules
+      let matchedCategoryName = 'altro'
       for (const [catName, keywords] of Object.entries(rules)) {
         if (keywords.some(kw => lowerTitle.includes(kw))) {
           matchedCategoryName = catName
@@ -79,9 +94,11 @@ export default function App() {
     return updatesMade;
   }
 
-  const fetchData = async () => {
+  const fetchData = async (isManualRefresh = false) => {
     try {
-      setLoading(true)
+      if (isManualRefresh) setIsRefreshing(true)
+      else setLoading(true)
+      
       const { data: cats, error: catError } = await supabase.from('categories').select('*')
       if (catError) throw catError
       setCategories(cats || [])
@@ -89,22 +106,31 @@ export default function App() {
       const { data: exp, error: expError } = await supabase
         .from('expenses')
         .select(`*, category:categories(*)`)
-        .order('date', { ascending: false })
+        .order('created_at', { ascending: true }) // fetch in order to build proper memory (latest overwrites older if we reduce)
+        
       if (expError) throw expError
+      
+      // We reverse to have newest first for UI
+      const sortedExp = (exp || []).reverse()
 
-      // Run Auto-categorization for expenses with no category
-      const uncategorized = (exp || []).filter(e => !e.category_id)
-      const wasUpdated = await autoCategorize(uncategorized, cats || [])
+      // Run Auto-categorization
+      const uncategorized = sortedExp.filter(e => !e.category_id)
+      const categorized = sortedExp.filter(e => e.category_id)
+      
+      // we pass the exp array in chronological order (before reverse) so that older memories are overwritten by newer memories in the loop
+      const chronologicalCategorized = (exp || []).filter(e => e.category_id)
+      const wasUpdated = await autoCategorize(uncategorized, cats || [], chronologicalCategorized)
       
       if (wasUpdated) {
-        // Refetch to get the updated categories
         const { data: updatedExp } = await supabase
           .from('expenses')
           .select(`*, category:categories(*)`)
-          .order('date', { ascending: false })
+          .order('date', { ascending: false }) // actually fetch with correct date order for final render
         setExpenses(updatedExp || [])
       } else {
-        setExpenses(exp || [])
+        // Fix sorting by date for final render (above we sorted by created_at)
+        const finalSorted = [...sortedExp].sort((a,b) => new Date(b.date) - new Date(a.date))
+        setExpenses(finalSorted)
       }
 
     } catch (error) {
@@ -112,6 +138,7 @@ export default function App() {
       alert('Errore nel caricamento dei dati')
     } finally {
       setLoading(false)
+      setIsRefreshing(false)
     }
   }
 
@@ -212,19 +239,16 @@ export default function App() {
     const now = new Date()
     now.setHours(23, 59, 59, 999)
     
-    // 7 Days
     const weekAgo = new Date(now)
     weekAgo.setDate(now.getDate() - 7)
     const weekExp = expenses.filter(e => new Date(e.date) >= weekAgo && new Date(e.date) <= now)
     const weekTotal = weekExp.reduce((sum, e) => sum + Number(e.amount), 0)
     
-    // 30 Days
     const monthAgo = new Date(now)
     monthAgo.setDate(now.getDate() - 30)
     const monthExp = expenses.filter(e => new Date(e.date) >= monthAgo && new Date(e.date) <= now)
     const monthTotal = monthExp.reduce((sum, e) => sum + Number(e.amount), 0)
 
-    // Current Month Prediction
     const currentMonth = now.getMonth()
     const currentYear = now.getFullYear()
     const thisMonthExp = expenses.filter(e => {
@@ -316,6 +340,14 @@ export default function App() {
           <h1 style={{ fontSize: '1.5rem', margin: 0 }}>Pay & Track</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>Bentornato</p>
         </div>
+        <button 
+          onClick={() => fetchData(true)} 
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-main)', cursor: 'pointer', transition: 'background 0.2s' }}
+          className={isRefreshing ? 'animate-spin' : ''}
+          aria-label="Aggiorna dati"
+        >
+          <RefreshCw size={18} />
+        </button>
       </header>
 
       {/* Edit Modal */}
@@ -352,7 +384,7 @@ export default function App() {
       )}
 
       <main className="animate-fade-in">
-        {loading ? (
+        {loading && !isRefreshing ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}><Loader2 className="animate-spin" size={32} color="var(--primary)" /></div>
         ) : (
           <>
