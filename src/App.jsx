@@ -479,7 +479,13 @@ export default function App() {
                   <h2 style={{ marginBottom: '16px' }}>Andamento (Ultimi 7 gg)</h2>
                   <Line 
                     data={getLineChartData()} 
-                    options={{ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }, x: { grid: { display: false } } } }} 
+                    options={{ 
+                      plugins: { legend: { display: false } }, 
+                      scales: { 
+                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8b8d98' } }, 
+                        x: { grid: { display: false }, ticks: { color: '#8b8d98' } } 
+                      } 
+                    }} 
                   />
                 </div>
 
@@ -506,7 +512,7 @@ export default function App() {
                     <div style={{ width: '80%', margin: '0 auto' }}>
                       <Doughnut 
                         data={getDoughnutChartData()} 
-                        options={{ plugins: { legend: { position: 'bottom', labels: { color: 'var(--text-main)' } } }, cutout: '70%', borderDash: [2] }} 
+                        options={{ plugins: { legend: { position: 'bottom', labels: { color: '#f0f0f2' } } }, cutout: '70%', borderDash: [2] }} 
                       />
                     </div>
                   ) : (
