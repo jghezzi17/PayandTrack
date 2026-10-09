@@ -22,6 +22,7 @@ export default function App() {
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState('today') 
+  const [customDate, setCustomDate] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
   
   // Add Expense State
@@ -47,14 +48,11 @@ export default function App() {
     const catMap = {}
     fetchedCats.forEach(c => catMap[c.name.toLowerCase()] = c.id)
 
-    // Build a memory map from previously manually/auto categorized expenses
-    // The most recent matching title will overwrite older ones, which is good (latest choice wins)
     const learnedMap = {}
     categorizedExpenses.forEach(e => {
       learnedMap[e.title.toLowerCase().trim()] = e.category_id
     })
 
-    // Dictionary of fallback keywords to categories
     const rules = {
       'cibo': ['mcdonald', 'bar', 'ristorante', 'pizzeria', 'caffè', 'starbucks', 'kfc', 'sushi', 'deliveroo', 'justeat', 'glovo', 'burger'],
       'spesa': ['esselunga', 'coop', 'conad', 'carrefour', 'pam', 'lidl', 'eurospin', 'supermercato', 'spesa'],
@@ -65,13 +63,11 @@ export default function App() {
     const updates = uncategorizedExpenses.map(exp => {
       const lowerTitle = exp.title.toLowerCase().trim()
 
-      // 1. Check if we "learned" this exact title from past expenses
       if (learnedMap[lowerTitle]) {
         updatesMade = true;
         return supabase.from('expenses').update({ category_id: learnedMap[lowerTitle] }).eq('id', exp.id)
       }
 
-      // 2. If no exact match in memory, use fallback rules
       let matchedCategoryName = 'altro'
       for (const [catName, keywords] of Object.entries(rules)) {
         if (keywords.some(kw => lowerTitle.includes(kw))) {
@@ -106,33 +102,26 @@ export default function App() {
       const { data: exp, error: expError } = await supabase
         .from('expenses')
         .select(`*, category:categories(*)`)
-        .order('created_at', { ascending: true }) // fetch in order to build proper memory (latest overwrites older if we reduce)
+        .order('created_at', { ascending: true }) 
         
       if (expError) throw expError
       
-      // We reverse to have newest first for UI
       const sortedExp = (exp || []).reverse()
-
-      // Run Auto-categorization
       const uncategorized = sortedExp.filter(e => !e.category_id)
-      const categorized = sortedExp.filter(e => e.category_id)
-      
-      // we pass the exp array in chronological order (before reverse) so that older memories are overwritten by newer memories in the loop
       const chronologicalCategorized = (exp || []).filter(e => e.category_id)
+      
       const wasUpdated = await autoCategorize(uncategorized, cats || [], chronologicalCategorized)
       
       if (wasUpdated) {
         const { data: updatedExp } = await supabase
           .from('expenses')
           .select(`*, category:categories(*)`)
-          .order('date', { ascending: false }) // actually fetch with correct date order for final render
+          .order('date', { ascending: false })
         setExpenses(updatedExp || [])
       } else {
-        // Fix sorting by date for final render (above we sorted by created_at)
         const finalSorted = [...sortedExp].sort((a,b) => new Date(b.date) - new Date(a.date))
         setExpenses(finalSorted)
       }
-
     } catch (error) {
       console.error('Error fetching data:', error.message)
       alert('Errore nel caricamento dei dati')
@@ -226,6 +215,9 @@ export default function App() {
         const monthAgo = new Date(now)
         monthAgo.setDate(now.getDate() - 30)
         return expDate >= monthAgo && expDate <= now
+      }
+      if (timeRange === 'custom' && customDate) {
+        return exp.date === customDate
       }
       return true
     })
@@ -333,6 +325,17 @@ export default function App() {
     width: '100%', maxWidth: '400px', border: '1px solid var(--border)'
   }
 
+  const getCardTitle = () => {
+    if (timeRange === 'today') return 'Spesa di Oggi'
+    if (timeRange === 'week') return 'Spesa Ultimi 7 Giorni'
+    if (timeRange === 'month') return 'Spesa Ultimi 30 Giorni'
+    if (timeRange === 'custom') {
+      if (!customDate) return 'Spesa in data selezionata'
+      return `Spesa del ${new Date(customDate).toLocaleDateString('it-IT')}`
+    }
+    return 'Spesa'
+  }
+
   return (
     <div className="app-container">
       <header style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -390,25 +393,44 @@ export default function App() {
           <>
             {activeTab === 'dashboard' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button className={`btn ${timeRange === 'today' ? '' : 'btn-outline'}`} onClick={() => setTimeRange('today')} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>Oggi</button>
-                  <button className={`btn ${timeRange === 'week' ? '' : 'btn-outline'}`} onClick={() => setTimeRange('week')} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>7 Giorni</button>
-                  <button className={`btn ${timeRange === 'month' ? '' : 'btn-outline'}`} onClick={() => setTimeRange('month')} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>30 Giorni</button>
+                
+                {/* Time Range Selector */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className={`btn ${timeRange === 'today' ? '' : 'btn-outline'}`} onClick={() => {setTimeRange('today'); setCustomDate('');}} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>Oggi</button>
+                    <button className={`btn ${timeRange === 'week' ? '' : 'btn-outline'}`} onClick={() => {setTimeRange('week'); setCustomDate('');}} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>7 Giorni</button>
+                    <button className={`btn ${timeRange === 'month' ? '' : 'btn-outline'}`} onClick={() => {setTimeRange('month'); setCustomDate('');}} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>30 Giorni</button>
+                  </div>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>O cerca per data:</span>
+                    <input 
+                      type="date" 
+                      className="form-control" 
+                      value={customDate}
+                      onChange={(e) => {
+                        setCustomDate(e.target.value)
+                        if (e.target.value) setTimeRange('custom')
+                        else setTimeRange('today')
+                      }}
+                      style={{ padding: '8px', fontSize: '0.85rem', flex: 1 }}
+                    />
+                  </div>
                 </div>
 
                 <div className="card" style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-hover))', border: 'none' }}>
                   <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.9rem', marginBottom: '4px' }}>
-                    {timeRange === 'today' ? 'Spesa di Oggi' : timeRange === 'week' ? 'Spesa Ultimi 7 Giorni' : 'Spesa Ultimi 30 Giorni'}
+                    {getCardTitle()}
                   </p>
                   <h2 style={{ fontSize: '2.5rem', color: 'white', margin: 0 }}>€ {totalExpense.toFixed(2)}</h2>
                 </div>
                 
                 <div className="card">
                   <h3 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>
-                    {timeRange === 'today' ? 'Spese di Oggi' : 'Ultime Spese'}
+                    {timeRange === 'today' ? 'Spese di Oggi' : timeRange === 'custom' ? 'Spese della Data' : 'Ultime Spese'}
                   </h3>
                   {filteredExpenses.length === 0 ? (
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '20px 0' }}>Nessuna spesa in questo periodo.</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '20px 0' }}>Nessuna spesa trovata.</p>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {filteredExpenses.map(expense => (
