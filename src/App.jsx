@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Home, PlusCircle, PieChart, Settings, Loader2, Edit2, X, RefreshCw } from 'lucide-react'
+import { Home, PlusCircle, PieChart, Settings, Loader2, Edit2, X, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import {
   Chart as ChartJS,
@@ -21,9 +21,11 @@ export default function App() {
   const [expenses, setExpenses] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
-  const [timeRange, setTimeRange] = useState('today') 
-  const [customDate, setCustomDate] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  
+  // Filtering states
+  const [timeRange, setTimeRange] = useState('day') // 'day', 'week', 'month'
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0])
   
   // Add Expense State
   const [amount, setAmount] = useState('')
@@ -137,12 +139,15 @@ export default function App() {
 
     try {
       setIsSubmitting(true)
+      // Seleziona la data attuale mostrata, o usa quella di oggi se l'utente non è su 'day'
+      const dateToSave = timeRange === 'day' ? selectedDate : new Date().toISOString().split('T')[0]
+      
       const { error } = await supabase.from('expenses').insert([
         {
           title,
           amount: parseFloat(amount),
           category_id: categoryId,
-          date: new Date().toISOString().split('T')[0]
+          date: dateToSave
         }
       ])
       if (error) throw error
@@ -200,12 +205,30 @@ export default function App() {
     }
   }
 
+  const changeDate = (daysToAdd) => {
+    const d = new Date(selectedDate)
+    d.setDate(d.getDate() + daysToAdd)
+    setSelectedDate(d.toISOString().split('T')[0])
+    setTimeRange('day')
+  }
+
+  const getDisplayDate = () => {
+    const todayStr = new Date().toISOString().split('T')[0]
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
+
+    if (selectedDate === todayStr) return 'Oggi'
+    if (selectedDate === yesterdayStr) return 'Ieri'
+    return new Date(selectedDate).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })
+  }
+
   const getFilteredExpenses = () => {
     const now = new Date()
     now.setHours(23, 59, 59, 999)
     return expenses.filter(exp => {
       const expDate = new Date(exp.date)
-      if (timeRange === 'today') return exp.date === new Date().toISOString().split('T')[0]
+      if (timeRange === 'day') return exp.date === selectedDate
       if (timeRange === 'week') {
         const weekAgo = new Date(now)
         weekAgo.setDate(now.getDate() - 7)
@@ -215,9 +238,6 @@ export default function App() {
         const monthAgo = new Date(now)
         monthAgo.setDate(now.getDate() - 30)
         return expDate >= monthAgo && expDate <= now
-      }
-      if (timeRange === 'custom' && customDate) {
-        return exp.date === customDate
       }
       return true
     })
@@ -326,13 +346,9 @@ export default function App() {
   }
 
   const getCardTitle = () => {
-    if (timeRange === 'today') return 'Spesa di Oggi'
+    if (timeRange === 'day') return `Spesa del ${getDisplayDate()}`
     if (timeRange === 'week') return 'Spesa Ultimi 7 Giorni'
     if (timeRange === 'month') return 'Spesa Ultimi 30 Giorni'
-    if (timeRange === 'custom') {
-      if (!customDate) return 'Spesa in data selezionata'
-      return `Spesa del ${new Date(customDate).toLocaleDateString('it-IT')}`
-    }
     return 'Spesa'
   }
 
@@ -397,25 +413,37 @@ export default function App() {
                 {/* Time Range Selector */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button className={`btn ${timeRange === 'today' ? '' : 'btn-outline'}`} onClick={() => {setTimeRange('today'); setCustomDate('');}} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>Oggi</button>
-                    <button className={`btn ${timeRange === 'week' ? '' : 'btn-outline'}`} onClick={() => {setTimeRange('week'); setCustomDate('');}} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>7 Giorni</button>
-                    <button className={`btn ${timeRange === 'month' ? '' : 'btn-outline'}`} onClick={() => {setTimeRange('month'); setCustomDate('');}} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>30 Giorni</button>
+                    <button className={`btn ${timeRange === 'day' ? '' : 'btn-outline'}`} onClick={() => {setTimeRange('day'); setSelectedDate(new Date().toISOString().split('T')[0]);}} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>Oggi</button>
+                    <button className={`btn ${timeRange === 'week' ? '' : 'btn-outline'}`} onClick={() => {setTimeRange('week');}} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>7 Giorni</button>
+                    <button className={`btn ${timeRange === 'month' ? '' : 'btn-outline'}`} onClick={() => {setTimeRange('month');}} style={{flex: 1, padding: '8px', fontSize: '0.85rem'}}>30 Giorni</button>
                   </div>
                   
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>O cerca per data:</span>
-                    <input 
-                      type="date" 
-                      className="form-control" 
-                      value={customDate}
-                      onChange={(e) => {
-                        setCustomDate(e.target.value)
-                        if (e.target.value) setTimeRange('custom')
-                        else setTimeRange('today')
-                      }}
-                      style={{ padding: '8px', fontSize: '0.85rem', flex: 1 }}
-                    />
-                  </div>
+                  {timeRange === 'day' && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-card)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                      <button onClick={() => changeDate(-1)} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                        <ChevronLeft size={20} />
+                      </button>
+                      
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{getDisplayDate()}</span>
+                        <input 
+                          type="date" 
+                          value={selectedDate}
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              setSelectedDate(e.target.value)
+                              setTimeRange('day')
+                            }
+                          }}
+                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
+                        />
+                      </div>
+
+                      <button onClick={() => changeDate(1)} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                        <ChevronRight size={20} />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="card" style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-hover))', border: 'none' }}>
@@ -427,7 +455,7 @@ export default function App() {
                 
                 <div className="card">
                   <h3 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>
-                    {timeRange === 'today' ? 'Spese di Oggi' : timeRange === 'custom' ? 'Spese della Data' : 'Ultime Spese'}
+                    {timeRange === 'day' ? `Spese del ${getDisplayDate()}` : 'Ultime Spese'}
                   </h3>
                   {filteredExpenses.length === 0 ? (
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '20px 0' }}>Nessuna spesa trovata.</p>
