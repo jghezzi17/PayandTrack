@@ -515,13 +515,40 @@ export default function App() {
                   </div>
                   
                   {timeRange === 'day' && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-card)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                      <button onClick={() => changeDate(-1)} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                    <div style={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: '44px 1fr 44px', 
+                      alignItems: 'center', 
+                      background: 'var(--bg-card)', 
+                      padding: '4px', 
+                      borderRadius: 'var(--radius-sm)', 
+                      border: '1px solid var(--border)',
+                      width: '100%',
+                      boxSizing: 'border-box'
+                    }}>
+                      <button 
+                        type="button"
+                        onClick={() => changeDate(-1)} 
+                        style={{ 
+                          background: 'none', 
+                          border: 'none', 
+                          color: 'var(--primary)', 
+                          cursor: 'pointer', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center',
+                          width: '44px',
+                          height: '38px',
+                          padding: 0,
+                          margin: 0
+                        }}
+                        aria-label="Giorno precedente"
+                      >
                         <ChevronLeft size={20} />
                       </button>
                       
-                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{getDisplayDate()}</span>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', width: '100%', height: '100%' }}>
+                        <span style={{ fontWeight: 'bold', fontSize: '0.95rem', letterSpacing: '-0.01em' }}>{getDisplayDate()}</span>
                         <input 
                           type="date" 
                           value={selectedDate}
@@ -532,10 +559,28 @@ export default function App() {
                             }
                           }}
                           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
+                          title="Seleziona data"
                         />
                       </div>
 
-                      <button onClick={() => changeDate(1)} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      <button 
+                        type="button"
+                        onClick={() => changeDate(1)} 
+                        style={{ 
+                          background: 'none', 
+                          border: 'none', 
+                          color: 'var(--primary)', 
+                          cursor: 'pointer', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center',
+                          width: '44px',
+                          height: '38px',
+                          padding: 0,
+                          margin: 0
+                        }}
+                        aria-label="Giorno successivo"
+                      >
                         <ChevronRight size={20} />
                       </button>
                     </div>
@@ -585,11 +630,11 @@ export default function App() {
                 <form onSubmit={handleAddExpense}>
                   <div className="form-group">
                     <label className="form-label">Data Spesa</label>
-                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%', boxSizing: 'border-box' }}>
                       <button 
                         type="button" 
                         className={`btn ${expenseDate === new Date().toISOString().split('T')[0] ? '' : 'btn-outline'}`}
-                        style={{ padding: '6px 12px', fontSize: '0.85rem', flex: 1 }}
+                        style={{ padding: '8px 12px', fontSize: '0.85rem', flex: 1, margin: 0, boxSizing: 'border-box' }}
                         onClick={() => setExpenseDate(new Date().toISOString().split('T')[0])}
                       >
                         Oggi
@@ -597,7 +642,7 @@ export default function App() {
                       <button 
                         type="button" 
                         className={`btn ${expenseDate === new Date(Date.now() - 86400000).toISOString().split('T')[0] ? '' : 'btn-outline'}`}
-                        style={{ padding: '6px 12px', fontSize: '0.85rem', flex: 1 }}
+                        style={{ padding: '8px 12px', fontSize: '0.85rem', flex: 1, margin: 0, boxSizing: 'border-box' }}
                         onClick={() => {
                           const y = new Date()
                           y.setDate(y.getDate() - 1)

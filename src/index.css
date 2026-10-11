@@ -124,7 +124,9 @@ a:hover {
 }
 
 .form-control {
+  display: block;
   width: 100%;
+  box-sizing: border-box;
   background: var(--bg-dark);
   border: 1px solid var(--border);
   color: var(--text-main);
@@ -133,11 +135,37 @@ a:hover {
   font-size: 1rem;
   font-family: inherit;
   transition: border-color 0.2s;
+  margin: 0;
 }
 
 .form-control:focus {
   outline: none;
   border-color: var(--primary);
+}
+
+input.form-control,
+select.form-control {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+input[type="date"].form-control {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  text-align: left;
+  min-height: 48px;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(0.8);
+  margin-right: 0;
+  padding: 0;
 }
 
 /* Animations */
