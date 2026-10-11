@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Home, PlusCircle, PieChart, Settings, Loader2, Edit2, X, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Home, PlusCircle, PieChart, Settings, Loader2, Edit2, X, RefreshCw, ChevronLeft, ChevronRight, Cigarette, Clock } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import {
   Chart as ChartJS,
@@ -31,6 +31,7 @@ export default function App() {
   const [amount, setAmount] = useState('')
   const [title, setTitle] = useState('')
   const [categoryId, setCategoryId] = useState('')
+  const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().split('T')[0])
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Edit Expense State
@@ -38,6 +39,7 @@ export default function App() {
   const [editTitle, setEditTitle] = useState('')
   const [editAmount, setEditAmount] = useState('')
   const [editCategoryId, setEditCategoryId] = useState('')
+  const [editDate, setEditDate] = useState('')
 
   useEffect(() => {
     fetchData()
@@ -60,6 +62,7 @@ export default function App() {
       'spesa': ['esselunga', 'coop', 'conad', 'carrefour', 'pam', 'lidl', 'eurospin', 'supermercato', 'spesa'],
       'trasporti': ['trenitalia', 'uber', 'taxi', 'eni', 'q8', 'ip', 'treno', 'italo', 'atm', 'biglietto', 'benzina', 'diesel', 'transport', 'flight', 'ryanair', 'easyjet'],
       'amazon': ['amazon', 'prime'],
+      'tabacchi': ['tabac', 'sigaret', 'iqos', 'glo', 'vape', 'trinciato', 'monopolio'],
     }
 
     const updates = uncategorizedExpenses.map(exp => {
@@ -146,8 +149,7 @@ export default function App() {
 
     try {
       setIsSubmitting(true)
-      // Seleziona la data attuale mostrata, o usa quella di oggi se l'utente non è su 'day'
-      const dateToSave = timeRange === 'day' ? selectedDate : new Date().toISOString().split('T')[0]
+      const dateToSave = expenseDate || new Date().toISOString().split('T')[0]
       
       const { error } = await supabase.from('expenses').insert([
         {
@@ -161,6 +163,9 @@ export default function App() {
       setAmount('')
       setTitle('')
       setCategoryId('')
+      setExpenseDate(new Date().toISOString().split('T')[0])
+      setSelectedDate(dateToSave)
+      setTimeRange('day')
       await fetchData()
       setActiveTab('dashboard')
     } catch (error) {
@@ -175,6 +180,7 @@ export default function App() {
     setEditTitle(expense.title)
     setEditAmount(expense.amount)
     setEditCategoryId(expense.category_id || '')
+    setEditDate(expense.date || new Date().toISOString().split('T')[0])
   }
 
   const handleUpdateExpense = async (e) => {
@@ -184,7 +190,8 @@ export default function App() {
       const { error } = await supabase.from('expenses').update({
         title: editTitle,
         amount: parseFloat(editAmount),
-        category_id: editCategoryId
+        category_id: editCategoryId,
+        date: editDate
       }).eq('id', editingExpense.id)
       
       if (error) throw error
@@ -291,6 +298,60 @@ export default function App() {
   }
 
   const stats = calculateAverages()
+
+  // --- LOGICA ULTIMO ACQUISTO TABACCO (> 5€) ---
+  const getLastTobaccoPurchase = () => {
+    const tobaccoKeywords = ['tabac', 'sigaret', 'vape', 'iqos', 'glo', 'trinciato', 'monopolio', 'fum']
+    const tobaccoExpenses = expenses.filter(e => {
+      const isOver5 = Number(e.amount) > 5
+      if (!isOver5) return false
+
+      const titleMatch = e.title && tobaccoKeywords.some(kw => e.title.toLowerCase().includes(kw))
+      const catMatch = e.category?.name && tobaccoKeywords.some(kw => e.category.name.toLowerCase().includes(kw))
+      return titleMatch || catMatch
+    })
+
+    if (tobaccoExpenses.length === 0) return null
+
+    const sorted = [...tobaccoExpenses].sort((a, b) => {
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.date).getTime()
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : new Date(b.date).getTime()
+      return timeB - timeA
+    })
+
+    return sorted[0]
+  }
+
+  const formatTobaccoDateTime = (item) => {
+    if (!item) return null
+    const dateSource = item.created_at ? new Date(item.created_at) : new Date(item.date)
+    
+    const now = new Date()
+    const todayStr = now.toISOString().split('T')[0]
+    const itemDateStr = new Date(item.date || item.created_at).toISOString().split('T')[0]
+    
+    const yesterday = new Date(now)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
+
+    let dayText = dateSource.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })
+    if (itemDateStr === todayStr) dayText = 'Oggi'
+    else if (itemDateStr === yesterdayStr) dayText = 'Ieri'
+
+    let timeText = ''
+    if (item.created_at) {
+      timeText = dateSource.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+    }
+
+    return {
+      dayText,
+      timeText,
+      fullDateText: dateSource.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    }
+  }
+
+  const lastTobacco = getLastTobaccoPurchase()
+  const tobaccoInfo = lastTobacco ? formatTobaccoDateTime(lastTobacco) : null
 
   const getLineChartData = () => {
     const days = []
@@ -418,6 +479,16 @@ export default function App() {
                   {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
                 </select>
               </div>
+              <div className="form-group">
+                <label className="form-label">Data</label>
+                <input 
+                  type="date" 
+                  className="form-control" 
+                  value={editDate} 
+                  onChange={e => setEditDate(e.target.value)} 
+                  required 
+                />
+              </div>
               <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
                 <button type="submit" className="btn" style={{ flex: 2 }} disabled={isSubmitting}>Salva</button>
                 <button type="button" className="btn btn-danger" style={{ flex: 1 }} onClick={handleDeleteExpense} disabled={isSubmitting}>Elimina</button>
@@ -512,6 +583,38 @@ export default function App() {
               <div className="card">
                 <h2 style={{ marginBottom: '20px' }}>Aggiungi Spesa</h2>
                 <form onSubmit={handleAddExpense}>
+                  <div className="form-group">
+                    <label className="form-label">Data Spesa</label>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                      <button 
+                        type="button" 
+                        className={`btn ${expenseDate === new Date().toISOString().split('T')[0] ? '' : 'btn-outline'}`}
+                        style={{ padding: '6px 12px', fontSize: '0.85rem', flex: 1 }}
+                        onClick={() => setExpenseDate(new Date().toISOString().split('T')[0])}
+                      >
+                        Oggi
+                      </button>
+                      <button 
+                        type="button" 
+                        className={`btn ${expenseDate === new Date(Date.now() - 86400000).toISOString().split('T')[0] ? '' : 'btn-outline'}`}
+                        style={{ padding: '6px 12px', fontSize: '0.85rem', flex: 1 }}
+                        onClick={() => {
+                          const y = new Date()
+                          y.setDate(y.getDate() - 1)
+                          setExpenseDate(y.toISOString().split('T')[0])
+                        }}
+                      >
+                        Ieri
+                      </button>
+                    </div>
+                    <input 
+                      type="date" 
+                      className="form-control" 
+                      required 
+                      value={expenseDate} 
+                      onChange={e => setExpenseDate(e.target.value)} 
+                    />
+                  </div>
                   <div className="form-group"><label className="form-label">Importo (€)</label><input type="number" className="form-control" placeholder="0.00" step="0.01" required value={amount} onChange={e => setAmount(e.target.value)} /></div>
                   <div className="form-group"><label className="form-label">Titolo</label><input type="text" className="form-control" placeholder="Es. Caffè" required value={title} onChange={e => setTitle(e.target.value)} /></div>
                   <div className="form-group">
@@ -540,6 +643,45 @@ export default function App() {
                       } 
                     }} 
                   />
+                </div>
+
+                {/* Card Ultimo Acquisto Tabacco (> 5€) */}
+                <div className="card" style={{ borderLeft: '4px solid #e67e22', background: 'var(--bg-card)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Cigarette size={20} color="#e67e22" />
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                        Ultimo acquisto tabacco (&gt; 5€)
+                      </span>
+                    </div>
+                    {lastTobacco && (
+                      <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: 'var(--danger)' }}>
+                        -€ {Number(lastTobacco.amount).toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                  {lastTobacco && tobaccoInfo ? (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginTop: '6px' }}>
+                        <h3 style={{ fontSize: '1.4rem', margin: 0, color: 'var(--text-main)' }}>
+                          {tobaccoInfo.dayText}
+                        </h3>
+                        {tobaccoInfo.timeText && (
+                          <span style={{ fontSize: '1.05rem', color: '#e67e22', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Clock size={16} />
+                            alle {tobaccoInfo.timeText}
+                          </span>
+                        )}
+                      </div>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '6px 0 0 0' }}>
+                        {lastTobacco.title} • {tobaccoInfo.fullDateText}
+                      </p>
+                    </div>
+                  ) : (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: '4px 0 0 0' }}>
+                      Nessun acquisto registrato superiore a 5€
+                    </p>
+                  )}
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
