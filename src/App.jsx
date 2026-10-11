@@ -93,6 +93,7 @@ export default function App() {
   }
 
   const fetchData = async (isManualRefresh = false) => {
+    const startTime = Date.now()
     try {
       if (isManualRefresh) setIsRefreshing(true)
       else setLoading(true)
@@ -128,6 +129,12 @@ export default function App() {
       console.error('Error fetching data:', error.message)
       alert('Errore nel caricamento dei dati')
     } finally {
+      if (isManualRefresh) {
+        const elapsed = Date.now() - startTime
+        if (elapsed < 600) {
+          await new Promise(r => setTimeout(r, 600 - elapsed))
+        }
+      }
       setLoading(false)
       setIsRefreshing(false)
     }
@@ -360,12 +367,30 @@ export default function App() {
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>Bentornato</p>
         </div>
         <button 
-          onClick={() => fetchData(true)} 
-          style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-main)', cursor: 'pointer', transition: 'background 0.2s' }}
-          className={isRefreshing ? 'animate-spin' : ''}
+          onClick={() => !isRefreshing && fetchData(true)} 
+          disabled={isRefreshing}
+          style={{ 
+            background: 'var(--bg-card)', 
+            border: '1px solid var(--border)', 
+            borderRadius: '50%', 
+            width: '40px', 
+            height: '40px', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            color: isRefreshing ? 'var(--primary)' : 'var(--text-main)', 
+            cursor: isRefreshing ? 'not-allowed' : 'pointer', 
+            transition: 'all 0.2s',
+            opacity: isRefreshing ? 0.85 : 1
+          }}
           aria-label="Aggiorna dati"
+          title="Aggiorna dati"
         >
-          <RefreshCw size={18} />
+          {isRefreshing ? (
+            <Loader2 size={18} className="animate-spin" />
+          ) : (
+            <RefreshCw size={18} />
+          )}
         </button>
       </header>
 
