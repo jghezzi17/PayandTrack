@@ -123,9 +123,17 @@ export default function App() {
           .from('expenses')
           .select(`*, category:categories(*)`)
           .order('date', { ascending: false })
+          .order('created_at', { ascending: false })
         setExpenses(updatedExp || [])
       } else {
-        const finalSorted = [...sortedExp].sort((a,b) => new Date(b.date) - new Date(a.date))
+        const finalSorted = [...sortedExp].sort((a,b) => {
+          const dateA = new Date(a.date).getTime()
+          const dateB = new Date(b.date).getTime()
+          if (dateB !== dateA) return dateB - dateA
+          const timeA = a.created_at ? new Date(a.created_at).getTime() : 0
+          const timeB = b.created_at ? new Date(b.created_at).getTime() : 0
+          return timeB - timeA
+        })
         setExpenses(finalSorted)
       }
     } catch (error) {
@@ -488,6 +496,11 @@ export default function App() {
                   onChange={e => setEditDate(e.target.value)} 
                   required 
                 />
+                {editingExpense.created_at && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginTop: '6px' }}>
+                    Orario di registrazione: {new Date(editingExpense.created_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
               </div>
               <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
                 <button type="submit" className="btn" style={{ flex: 2 }} disabled={isSubmitting}>Salva</button>
@@ -602,22 +615,28 @@ export default function App() {
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '20px 0' }}>Nessuna spesa trovata.</p>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {filteredExpenses.map(expense => (
-                        <div key={expense.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
-                          <div>
-                            <p style={{ fontWeight: '500', fontSize: '0.95rem' }}>{expense.title}</p>
-                            <span style={{ fontSize: '0.75rem', color: expense.category?.color || 'var(--text-muted)' }}>
-                              {expense.category?.name || 'Senza Categoria'} • {new Date(expense.date).toLocaleDateString('it-IT')}
-                            </span>
+                      {filteredExpenses.map(expense => {
+                        const timeStr = expense.created_at 
+                          ? new Date(expense.created_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) 
+                          : null
+
+                        return (
+                          <div key={expense.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
+                            <div>
+                              <p style={{ fontWeight: '500', fontSize: '0.95rem' }}>{expense.title}</p>
+                              <span style={{ fontSize: '0.75rem', color: expense.category?.color || 'var(--text-muted)' }}>
+                                {expense.category?.name || 'Senza Categoria'} • {new Date(expense.date).toLocaleDateString('it-IT')}{timeStr ? ` • ${timeStr}` : ''}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{ fontWeight: '600', color: 'var(--danger)' }}>-€ {Number(expense.amount).toFixed(2)}</div>
+                              <button onClick={() => openEditModal(expense)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
+                                <Edit2 size={16} />
+                              </button>
+                            </div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{ fontWeight: '600', color: 'var(--danger)' }}>-€ {Number(expense.amount).toFixed(2)}</div>
-                            <button onClick={() => openEditModal(expense)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
-                              <Edit2 size={16} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
