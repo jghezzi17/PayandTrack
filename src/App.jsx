@@ -33,6 +33,7 @@ export default function App() {
   const [categoryId, setCategoryId] = useState('')
   const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().split('T')[0])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [insightPeriod, setInsightPeriod] = useState('week') // 'week' | 'month'
 
   // Edit Expense State
   const [editingExpense, setEditingExpense] = useState(null)
@@ -409,6 +410,19 @@ export default function App() {
     }
   }
 
+  const getCategoryBreakdown = (expList) => {
+    const totals = {}
+    expList.forEach(e => {
+      const catName = e.category?.name || 'Senza Categoria'
+      totals[catName] = (totals[catName] || 0) + Number(e.amount)
+    })
+    return Object.entries(totals)
+      .sort((a, b) => b[1] - a[1])
+  }
+
+  const catColors = ['#5e6ad2', '#ff4d4d', '#9b59b6', '#f1c40f', '#e67e22', '#3498db', '#2ecc71', '#8b8d98']
+
+
   // Modal Styles
   const modalOverlayStyle = {
     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -778,6 +792,70 @@ export default function App() {
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center' }}>Dati insufficienti.</p>
                   )}
                 </div>
+
+                {/* Spesa per Categoria - Settimana / Mese */}
+                {(() => {
+                  const expList = insightPeriod === 'week' ? stats.weekExp : stats.monthExp
+                  const breakdown = getCategoryBreakdown(expList)
+                  const periodTotal = breakdown.reduce((s, [, v]) => s + v, 0)
+                  return (
+                    <div className="card">
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                        <h3 style={{ margin: 0 }}>Spesa per Categoria</h3>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            className={`btn ${insightPeriod === 'week' ? '' : 'btn-outline'}`}
+                            style={{ padding: '5px 12px', fontSize: '0.8rem' }}
+                            onClick={() => setInsightPeriod('week')}
+                          >
+                            7 gg
+                          </button>
+                          <button
+                            className={`btn ${insightPeriod === 'month' ? '' : 'btn-outline'}`}
+                            style={{ padding: '5px 12px', fontSize: '0.8rem' }}
+                            onClick={() => setInsightPeriod('month')}
+                          >
+                            30 gg
+                          </button>
+                        </div>
+                      </div>
+                      {breakdown.length === 0 ? (
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '8px 0' }}>Nessuna spesa nel periodo.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {breakdown.map(([catName, total], idx) => {
+                            const pct = periodTotal > 0 ? (total / periodTotal) * 100 : 0
+                            const color = catColors[idx % catColors.length]
+                            return (
+                              <div key={catName}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                  <span style={{ fontSize: '0.88rem', fontWeight: 500 }}>{catName}</span>
+                                  <span style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>
+                                    € {total.toFixed(2)}
+                                    <span style={{ marginLeft: '6px', color: color, fontWeight: 600 }}>{pct.toFixed(0)}%</span>
+                                  </span>
+                                </div>
+                                <div style={{ height: '6px', background: 'var(--border)', borderRadius: '99px', overflow: 'hidden' }}>
+                                  <div style={{
+                                    height: '100%',
+                                    width: `${pct}%`,
+                                    background: color,
+                                    borderRadius: '99px',
+                                    transition: 'width 0.4s ease'
+                                  }} />
+                                </div>
+                              </div>
+                            )
+                          })}
+                          <div style={{ borderTop: '1px solid var(--border)', paddingTop: '10px', display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: '0.88rem', color: 'var(--text-muted)', fontWeight: 600 }}>Totale</span>
+                            <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)' }}>€ {periodTotal.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
