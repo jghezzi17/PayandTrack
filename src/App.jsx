@@ -278,6 +278,11 @@ export default function App() {
     weekAgo.setDate(now.getDate() - 7)
     const weekExp = expenses.filter(e => new Date(e.date) >= weekAgo && new Date(e.date) <= now)
     const weekTotal = weekExp.reduce((sum, e) => sum + Number(e.amount), 0)
+
+    const twoWeeksAgo = new Date(now)
+    twoWeeksAgo.setDate(now.getDate() - 14)
+    const twoWeeksExp = expenses.filter(e => new Date(e.date) >= twoWeeksAgo && new Date(e.date) <= now)
+    const twoWeeksTotal = twoWeeksExp.reduce((sum, e) => sum + Number(e.amount), 0)
     
     const monthAgo = new Date(now)
     monthAgo.setDate(now.getDate() - 30)
@@ -298,10 +303,12 @@ export default function App() {
 
     return {
       avg7: weekTotal / 7,
+      avg14: twoWeeksTotal / 14,
       avg30: monthTotal / 30,
       prediction,
       monthTotal,
       weekExp,
+      twoWeeksExp,
       monthExp
     }
   }
@@ -762,14 +769,18 @@ export default function App() {
                   )}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="card" style={{ padding: '16px' }}>
-                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Media 7 Giorni</p>
-                    <p style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>€ {stats.avg7.toFixed(2)} <span style={{fontSize:'0.8rem', fontWeight:'normal'}}>/gg</span></p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                  <div className="card" style={{ padding: '14px 10px' }}>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px', lineHeight: 1.2 }}>Media Ultimi 7 Giorni</p>
+                    <p style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>€ {stats.avg7.toFixed(2)} <span style={{fontSize:'0.75rem', fontWeight:'normal'}}>/gg</span></p>
                   </div>
-                  <div className="card" style={{ padding: '16px' }}>
-                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Media 30 Giorni</p>
-                    <p style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>€ {stats.avg30.toFixed(2)} <span style={{fontSize:'0.8rem', fontWeight:'normal'}}>/gg</span></p>
+                  <div className="card" style={{ padding: '14px 10px' }}>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px', lineHeight: 1.2 }}>Media Ultimi 14 Giorni</p>
+                    <p style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>€ {stats.avg14.toFixed(2)} <span style={{fontSize:'0.75rem', fontWeight:'normal'}}>/gg</span></p>
+                  </div>
+                  <div className="card" style={{ padding: '14px 10px' }}>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px', lineHeight: 1.2 }}>Media Ultimi 30 Giorni</p>
+                    <p style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>€ {stats.avg30.toFixed(2)} <span style={{fontSize:'0.75rem', fontWeight:'normal'}}>/gg</span></p>
                   </div>
                 </div>
 
