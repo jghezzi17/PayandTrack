@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Home, PlusCircle, PieChart, Settings, Loader2, Edit2, X, RefreshCw, ChevronLeft, ChevronRight, Cigarette, Clock } from 'lucide-react'
+import { Home, PlusCircle, PieChart, Settings, Loader2, Edit2, X, RefreshCw, ChevronLeft, ChevronRight, Cigarette, Clock, Timer } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import {
   Chart as ChartJS,
@@ -315,8 +315,23 @@ export default function App() {
 
   const stats = calculateAverages()
 
-  // --- LOGICA ULTIMO ACQUISTO TABACCO (> 5€) ---
-  const getLastTobaccoPurchase = () => {
+  // --- LOGICA TABACCO (> 5€) & DURATE ---
+  const formatDurationText = (ms) => {
+    if (!ms || ms <= 0) return '0 ore'
+    const totalHours = Math.round(ms / (1000 * 60 * 60))
+    const days = Math.floor(totalHours / 24)
+    const hours = totalHours % 24
+
+    if (days === 0) {
+      return `${hours} ${hours === 1 ? 'ora' : 'ore'}`
+    }
+    if (hours === 0) {
+      return `${days} ${days === 1 ? 'giorno' : 'giorni'}`
+    }
+    return `${days} ${days === 1 ? 'giorno' : 'giorni'} e ${hours} ${hours === 1 ? 'ora' : 'ore'}`
+  }
+
+  const getTobaccoStats = () => {
     const tobaccoKeywords = ['tabac', 'sigaret', 'vape', 'iqos', 'glo', 'trinciato', 'monopolio', 'fum']
     const tobaccoExpenses = expenses.filter(e => {
       const isOver5 = Number(e.amount) > 5
@@ -329,13 +344,57 @@ export default function App() {
 
     if (tobaccoExpenses.length === 0) return null
 
-    const sorted = [...tobaccoExpenses].sort((a, b) => {
-      const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.date).getTime()
-      const timeB = b.created_at ? new Date(b.created_at).getTime() : new Date(b.date).getTime()
-      return timeB - timeA
-    })
+    const getItemTime = (item) => {
+      if (!item) return 0
+      if (item.created_at) {
+        const t = new Date(item.created_at).getTime()
+        if (!isNaN(t)) return t
+      }
+      if (item.date) {
+        const t = new Date(item.date).getTime()
+        if (!isNaN(t)) return t
+      }
+      return 0
+    }
 
-    return sorted[0]
+    const sorted = [...tobaccoExpenses].sort((a, b) => getItemTime(b) - getItemTime(a))
+
+    const last = sorted[0]
+    const previous = sorted[1] || null
+
+    // Differenza tra ultimo e penultimo acquisto
+    let lastDurationMs = null
+    if (previous) {
+      const diff = getItemTime(last) - getItemTime(previous)
+      if (diff > 0) lastDurationMs = diff
+    }
+
+    // Intervalli storici tra tutti gli acquisti consecutivi
+    const intervals = []
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const diff = getItemTime(sorted[i]) - getItemTime(sorted[i + 1])
+      if (diff > 0) intervals.push(diff)
+    }
+
+    let avgDurationMs = null
+    if (intervals.length > 0) {
+      avgDurationMs = intervals.reduce((sum, val) => sum + val, 0) / intervals.length
+    }
+
+    // Tempo trascorso dall'ultimo acquisto (pacchetto in corso)
+    const nowTime = Date.now()
+    const lastTime = getItemTime(last)
+    const currentPackMs = lastTime > 0 ? Math.max(0, nowTime - lastTime) : 0
+
+    return {
+      last,
+      previous,
+      lastDurationMs,
+      avgDurationMs,
+      intervalsCount: intervals.length,
+      currentPackMs,
+      totalPurchases: sorted.length
+    }
   }
 
   const formatTobaccoDateTime = (item) => {
@@ -366,7 +425,8 @@ export default function App() {
     }
   }
 
-  const lastTobacco = getLastTobaccoPurchase()
+  const tobaccoStats = getTobaccoStats()
+  const lastTobacco = tobaccoStats?.last || null
   const tobaccoInfo = lastTobacco ? formatTobaccoDateTime(lastTobacco) : null
 
   const getLineChartData = () => {
@@ -730,7 +790,7 @@ export default function App() {
                   />
                 </div>
 
-                {/* Card Ultimo Acquisto Tabacco (> 5€) */}
+                {/* Card Ultimo Acquisto Tabacco (> 5€) & Statistiche Durata */}
                 <div className="card" style={{ borderLeft: '4px solid #e67e22', background: 'var(--bg-card)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -761,6 +821,95 @@ export default function App() {
                       <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '6px 0 0 0' }}>
                         {lastTobacco.title} • {tobaccoInfo.fullDateText}
                       </p>
+
+                      {/* Info Durata Ultimo Tabacco e Media Storica */}
+                      <div style={{
+                        marginTop: '16px',
+                        paddingTop: '14px',
+                        borderTop: '1px solid var(--border)',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                        gap: '10px'
+                      }}>
+                        <div style={{
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 'var(--radius-sm)',
+                          padding: '12px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                            <Timer size={14} color="#e67e22" />
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                              Durata Ultimo Tabacco
+                            </span>
+                          </div>
+                          {tobaccoStats && tobaccoStats.lastDurationMs ? (
+                            <>
+                              <div style={{ fontSize: '1.05rem', fontWeight: 'bold', color: 'var(--text-main)', lineHeight: 1.25 }}>
+                                {formatDurationText(tobaccoStats.lastDurationMs)}
+                              </div>
+                              {tobaccoStats.previous && (
+                                <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                                  Tra ultimo e penultimo ({new Date(tobaccoStats.previous.date || tobaccoStats.previous.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })})
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+                              {tobaccoStats?.totalPurchases === 1 
+                                ? 'Serve almeno il penultimo acquisto' 
+                                : 'Dati insufficienti'}
+                            </p>
+                          )}
+                        </div>
+
+                        <div style={{
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 'var(--radius-sm)',
+                          padding: '12px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                            <Clock size={14} color="#e67e22" />
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                              Durata Media
+                            </span>
+                          </div>
+                          {tobaccoStats && tobaccoStats.avgDurationMs ? (
+                            <>
+                              <div style={{ fontSize: '1.05rem', fontWeight: 'bold', color: 'var(--text-main)', lineHeight: 1.25 }}>
+                                {formatDurationText(tobaccoStats.avgDurationMs)}
+                              </div>
+                              <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                                Media su {tobaccoStats.intervalsCount} {tobaccoStats.intervalsCount === 1 ? 'intervallo' : 'intervalli'}
+                              </p>
+                            </>
+                          ) : (
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+                              In attesa di più acquisti
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Badge durata pacchetto in corso */}
+                      {tobaccoStats && tobaccoStats.currentPackMs > 0 && (
+                        <div style={{
+                          marginTop: '10px',
+                          padding: '8px 12px',
+                          background: 'rgba(230, 126, 34, 0.08)',
+                          borderRadius: 'var(--radius-sm)',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontSize: '0.75rem'
+                        }}>
+                          <span style={{ color: 'var(--text-muted)' }}>Pacchetto attuale aperto da:</span>
+                          <span style={{ fontWeight: 600, color: '#e67e22' }}>
+                            {formatDurationText(tobaccoStats.currentPackMs)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: '4px 0 0 0' }}>
